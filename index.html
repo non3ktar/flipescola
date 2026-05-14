@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Flipbook | Bottom Nav</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #030303;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: #ffffff;
+            font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            padding-bottom: 50px; /* Espaço para a barra inferior */
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        #flipbook-container {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            min-height: 85vh;
+            perspective: 2500px;
+            padding: 20px;
+        }
+
+        .flip-book {
+            box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7);
+            background-color: transparent;
+        }
+
+        .page {
+            background-color: white;
+            overflow: hidden;
+            backface-visibility: hidden;
+        }
+
+        .page-content {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: white;
+        }
+
+        img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            image-rendering: -webkit-optimize-contrast;
+        }
+
+        .loader-bar {
+            width: 0%;
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center">
+
+    <!-- Seção de Upload (Fica no centro) -->
+    <div id="upload-section" class="max-w-md mx-auto mt-40 p-10 bg-white/5 rounded-3xl text-center border border-white/5">
+        <h2 class="text-xl font-black text-white tracking-tight uppercase italic mb-6">PDF to Flipbook</h2>
+        <input type="file" id="pdf-input" accept="application/pdf" class="hidden">
+        <label for="pdf-input" class="cursor-pointer bg-primary text-white px-10 py-4 rounded-2xl font-black text-sm hover:opacity-90 transition-all inline-block shadow-xl shadow-primary/20 tracking-widest">
+            SELECIONAR
+        </label>
+    </div>
+
+    <!-- Barra Inferior Ultra Fina -->
+    <nav class="fixed bottom-0 w-full px-8 py-1 flex justify-between items-center glass z-50">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="location.reload()">
+            <div class="w-6 h-6 rounded bg-primary flex items-center justify-center">
+                <i data-lucide="book" class="text-white w-3.5 h-3.5"></i>
+            </div>
+            <h1 class="text-[10px] font-black tracking-widest uppercase italic opacity-40">Vibe Flip</h1>
+        </div>
+
+        <div id="controls" class="hidden flex items-center gap-6">
+            <div class="flex items-center">
+                <button id="prevBtn" class="p-1 hover:text-primary transition-colors text-white/30">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </button>
+                <span id="pageInfo" class="px-4 text-[10px] font-black font-mono text-primary min-w-[60px] text-center tracking-[4px]">0 / 0</span>
+                <button id="nextBtn" class="p-1 hover:text-primary transition-colors text-white/30">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="w-px h-4 bg-white/10"></div>
+
+            <button id="downloadBtn" class="text-white/40 hover:text-white transition-all flex items-center text-[9px] font-bold tracking-[3px]">
+                <i data-lucide="download" class="w-3.5 h-3.5 mr-2"></i>
+                PDF DUPLO
+            </button>
+        </div>
+
+        <div class="text-[9px] text-white/10 font-bold tracking-[5px] uppercase">
+            Salinas da Margarida
+        </div>
+    </nav>
+
+    <div id="loading-section" class="hidden fixed inset-0 bg-bg/95 z-50 flex flex-col items-center justify-center text-center">
+        <p class="text-xl font-black text-white uppercase italic mb-3">Carregando...</p>
+        <div class="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
+            <div id="progress-bar" class="loader-bar"></div>
+        </div>
+    </div>
+
+    <div id="flipbook-container" class="w-full h-full flex items-center justify-center">
+        <div id="book" class="flip-book"></div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        const pdfInput = document.getElementById('pdf-input');
+        const uploadSection = document.getElementById('upload-section');
+        const loadingSection = document.getElementById('loading-section');
+        const flipbookContainer = document.getElementById('flipbook-container');
+        const bookElement = document.getElementById('book');
+        const progressBar = document.getElementById('progress-bar');
+        const controls = document.getElementById('controls');
+        const pageInfo = document.getElementById('pageInfo');
+
+        let pageFlip = null;
+        let pageImages = [];
+
+        pdfInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            uploadSection.classList.add('hidden');
+            loadingSection.classList.remove('hidden');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                const numPages = pdf.numPages;
+
+                bookElement.innerHTML = '';
+                pageImages = [];
+
+                const firstPage = await pdf.getPage(1);
+                const baseViewport = firstPage.getViewport({ scale: 1.0 });
+                const baseWidth = baseViewport.width;
+                const baseHeight = baseViewport.height;
+
+                for (let i = 1; i <= numPages; i++) {
+                    progressBar.style.width = `${Math.round((i / numPages) * 100)}%`;
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2.5 });
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                    // Sombras leves
+                    const isLeftPage = (i > 1 && i % 2 === 0);
+                    const isRightPage = (i === 1 || i % 2 !== 0);
+                    const shadowWidth = canvas.width * 0.08;
+                    let gradient;
+                    if (isLeftPage) {
+                        gradient = ctx.createLinearGradient(canvas.width - shadowWidth, 0, canvas.width, 0);
+                        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+                        gradient.addColorStop(1, 'rgba(0,0,0,0.08)');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(canvas.width - shadowWidth, 0, shadowWidth, canvas.height);
+                    } else if (isRightPage && i > 1) {
+                        gradient = ctx.createLinearGradient(0, 0, shadowWidth, 0);
+                        gradient.addColorStop(0, 'rgba(0,0,0,0.08)');
+                        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(0, 0, shadowWidth, canvas.height);
+                    }
+
+                    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                    pageImages.push({ data: imgData, width: canvas.width, height: canvas.height });
+
+                    const pageDiv = document.createElement('div');
+                    pageDiv.className = 'page';
+                    pageDiv.innerHTML = `<div class="page-content"><img src="${imgData}"></div>`;
+                    bookElement.appendChild(pageDiv);
+                }
+
+                initPageFlip(baseWidth, baseHeight);
+                loadingSection.classList.add('hidden');
+                flipbookContainer.style.display = 'flex';
+                controls.classList.remove('hidden');
+
+            } catch (err) {
+                console.error(err);
+                location.reload();
+            }
+        });
+
+        function initPageFlip(w, h) {
+            const containerWidth = window.innerWidth * 0.85;
+            const containerHeight = window.innerHeight * 0.8;
+            const ratio = Math.min(containerWidth / (w * 2), containerHeight / h);
+            
+            pageFlip = new St.PageFlip(bookElement, {
+                width: Math.floor(w * ratio),
+                height: Math.floor(h * ratio),
+                size: "stretch",
+                showCover: true,
+                useMouseEvents: true,
+                flippingTime: 800,
+                maxShadowOpacity: 0.15
+            });
+
+            pageFlip.loadFromHTML(document.querySelectorAll('.page'));
+            updateUI();
+            pageFlip.on('flip', () => updateUI());
+            document.getElementById('prevBtn').onclick = () => pageFlip.flipPrev();
+            document.getElementById('nextBtn').onclick = () => pageFlip.flipNext();
+            document.getElementById('downloadBtn').onclick = downloadAsSpreadPdf;
+        }
+
+        function updateUI() {
+            if (pageFlip) {
+                document.getElementById('pageInfo').innerText = `${pageFlip.getCurrentPageIndex() + 1} / ${pageFlip.getPageCount()}`;
+            }
+        }
+
+        async function downloadAsSpreadPdf() {
+            if (pageImages.length === 0) return;
+            const { jsPDF } = window.jspdf;
+            const first = pageImages[0];
+            const pdf = new jsPDF({ orientation: 'l', unit: 'px', format: [first.width * 2, first.height] });
+            let idx = 0;
+            pdf.addImage(pageImages[0].data, 'JPEG', first.width, 0, first.width, first.height);
+            idx++;
+            while (idx < pageImages.length) {
+                pdf.addPage([first.width * 2, first.height], 'l');
+                if (pageImages[idx]) pdf.addImage(pageImages[idx].data, 'JPEG', 0, 0, first.width, first.height);
+                idx++;
+                if (pageImages[idx]) pdf.addImage(pageImages[idx].data, 'JPEG', first.width, 0, first.width, first.height);
+                idx++;
+            }
+            pdf.save("flipbook.pdf");
+        }
+    </script>
+</body>
+</html>
